@@ -1,0 +1,11 @@
+<component name="libraryTable">
+  <library name="com.spotify.sdk:spotify-player-24-noconnect-2.20b:@aar">
+    <CLASSES>
+      <root url="file://$USER_HOME$/.gradle/caches/transforms-1/files-1.1/spotify-player-24-noconnect-2.20b.aar/7935f0b1d8a6910e76d7a26e257efbdf/res" />
+      <root url="jar://$USER_HOME$/.gradle/caches/transforms-1/files-1.1/spotify-player-24-noconnect-2.20b.aar/7935f0b1d8a6910e76d7a26e257efbdf/jars/libs/jnihelpers-1.0.jar!/" />
+      <root url="jar://$USER_HOME$/.gradle/caches/transforms-1/files-1.1/spotify-player-24-noconnect-2.20b.aar/7935f0b1d8a6910e76d7a26e257efbdf/jars/classes.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>
