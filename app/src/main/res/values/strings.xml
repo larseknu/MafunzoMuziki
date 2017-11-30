@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">MafonzoMuziki</string>
+    <string name="playing">PLAYING</string>
+    <string name="paused">PAUSED</string>
 </resources>
