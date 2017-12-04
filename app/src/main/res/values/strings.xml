@@ -5,4 +5,6 @@
     <string name="time">Time</string>
     <string name="song">Song</string>
     <string name="status">Status</string>
+    <string name="playlist_cover">Playlist cover</string>
+    <string name="playlist_title">Playlist title</string>
 </resources>

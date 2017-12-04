@@ -7,6 +7,7 @@ import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.KeyEvent;
 import android.view.View;
 import android.widget.ImageButton;
 import android.widget.TextView;
@@ -24,6 +25,8 @@ import com.spotify.sdk.android.player.Spotify;
 import com.spotify.sdk.android.player.SpotifyPlayer;
 
 import java.text.DecimalFormat;
+
+import kaaes.spotify.webapi.android.models.PlaylistSimple;
 
 public class PlayActivity extends AppCompatActivity implements SpotifyPlayer.NotificationCallback, ConnectionStateCallback {
     private static final String TAG = "Mafonzo";
@@ -45,6 +48,7 @@ public class PlayActivity extends AppCompatActivity implements SpotifyPlayer.Not
     private Player player;
     private CountDownTimer countDownTimer;
     private boolean paused = false;
+    private PlaylistSimple currentPlaylist;
 
     long remainingTime = 0;
     private static long PAUSE_TIME = 10000;
@@ -54,7 +58,9 @@ public class PlayActivity extends AppCompatActivity implements SpotifyPlayer.Not
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_main);
+        setContentView(R.layout.activity_play);
+
+        currentPlaylist = getIntent().getParcelableExtra("playlist");
 
         AuthenticationRequest.Builder builder = new AuthenticationRequest.Builder(CLIENT_ID,
                 AuthenticationResponse.Type.TOKEN,
@@ -88,6 +94,7 @@ public class PlayActivity extends AppCompatActivity implements SpotifyPlayer.Not
                         player.addConnectionStateCallback(PlayActivity.this);
                         player.addNotificationCallback(PlayActivity.this);
                         //player.setRepeat(null, true);
+                        startPlaylist(currentPlaylist.uri);
                     }
 
                     @Override
@@ -123,7 +130,6 @@ public class PlayActivity extends AppCompatActivity implements SpotifyPlayer.Not
         countDownTimer = new CountDownTimer(pauseTime, 10) {
 
             public void onTick(long millisUntilFinished) {
-                //Log.d("PlayActivity", "Pause seconds remaining " + millisUntilFinished / 1000);
                 remainingTime = millisUntilFinished;
                 timeTextView.setText(timerFormat.format(remainingTime / 1000.0));
             }
@@ -141,8 +147,22 @@ public class PlayActivity extends AppCompatActivity implements SpotifyPlayer.Not
 
     @Override
     protected void onDestroy() {
+        player.removeConnectionStateCallback(PlayActivity.this);
+        player.removeNotificationCallback(PlayActivity.this);
         Spotify.destroyPlayer(this);
+        Log.d(TAG, 	"References: " + Spotify.getReferenceCount());
+        //player.destroy();
         super.onDestroy();
+    }
+
+    @Override
+    public boolean onKeyDown(int keyCode, KeyEvent event)
+    {
+        if ((keyCode == KeyEvent.KEYCODE_BACK))
+        {
+            countDownTimer.cancel();
+        }
+        return super.onKeyDown(keyCode, event);
     }
 
     @Override
@@ -150,11 +170,7 @@ public class PlayActivity extends AppCompatActivity implements SpotifyPlayer.Not
         Log.d("PlayActivity", "Playback event received: " + playerEvent.name());
 
         switch (playerEvent) {
-            case kSpPlaybackNotifyPlay:
-                UpdateUIWithCurrentSong(player.getMetadata());
-            case kSpPlaybackNotifyNext:
-                UpdateUIWithCurrentSong(player.getMetadata());
-            case kSpPlaybackNotifyPrev:
+            case kSpPlaybackNotifyMetadataChanged:
                 UpdateUIWithCurrentSong(player.getMetadata());
             default:
                 break;
@@ -164,8 +180,8 @@ public class PlayActivity extends AppCompatActivity implements SpotifyPlayer.Not
     private void UpdateUIWithCurrentSong(Metadata metadata) {
         Metadata.Track currentTrack = metadata.currentTrack;
 
-        artistTextView.setText(currentTrack.artistName + " - "+ currentTrack.name);
-
+        if (currentTrack.artistName != null && currentTrack.name != null)
+            artistTextView.setText(currentTrack.artistName + " - "+ currentTrack.name);
     }
 
     @Override
@@ -181,8 +197,10 @@ public class PlayActivity extends AppCompatActivity implements SpotifyPlayer.Not
     @Override
     public void onLoggedIn() {
         Log.d("PlayActivity", "User logged in");
+    }
 
-        player.playUri(null, "spotify:user:johanbrook:playlist:2mtlhuFVOFMn6Ho3JmrLc2", 0, 0);
+    private void startPlaylist(String uri) {
+        player.playUri(null, uri, 0, 0);
         startPlayCountdown(PLAY_TIME);
         statusTextView.setText(R.string.playing);
     }
