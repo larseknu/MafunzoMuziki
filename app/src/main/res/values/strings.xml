@@ -2,4 +2,7 @@
     <string name="app_name">MafonzoMuziki</string>
     <string name="playing">PLAYING</string>
     <string name="paused">PAUSED</string>
+    <string name="time">Time</string>
+    <string name="song">Song</string>
+    <string name="status">Status</string>
 </resources>

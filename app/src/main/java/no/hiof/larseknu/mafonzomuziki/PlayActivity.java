@@ -1,9 +1,9 @@
 package no.hiof.larseknu.mafonzomuziki;
 
 import android.content.Intent;
-import android.graphics.Color;
 import android.os.CountDownTimer;
 import android.support.constraint.ConstraintLayout;
+import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
@@ -25,7 +25,7 @@ import com.spotify.sdk.android.player.SpotifyPlayer;
 
 import java.text.DecimalFormat;
 
-public class MainActivity extends AppCompatActivity implements SpotifyPlayer.NotificationCallback, ConnectionStateCallback {
+public class PlayActivity extends AppCompatActivity implements SpotifyPlayer.NotificationCallback, ConnectionStateCallback {
     private static final String TAG = "Mafonzo";
 
     // region top secret
@@ -48,7 +48,7 @@ public class MainActivity extends AppCompatActivity implements SpotifyPlayer.Not
 
     long remainingTime = 0;
     private static long PAUSE_TIME = 10000;
-    private static long PLAY_TIME = 10000;
+    private static long PLAY_TIME = 50000;
     private static DecimalFormat timerFormat = new DecimalFormat("00.00");
 
     @Override
@@ -85,14 +85,14 @@ public class MainActivity extends AppCompatActivity implements SpotifyPlayer.Not
                     @Override
                     public void onInitialized(SpotifyPlayer spotifyPlayer) {
                         player = spotifyPlayer;
-                        player.addConnectionStateCallback(MainActivity.this);
-                        player.addNotificationCallback(MainActivity.this);
+                        player.addConnectionStateCallback(PlayActivity.this);
+                        player.addNotificationCallback(PlayActivity.this);
                         //player.setRepeat(null, true);
                     }
 
                     @Override
                     public void onError(Throwable throwable) {
-                        Log.e("MainActivity", "Could not initialize player: " + throwable.getMessage());
+                        Log.e("PlayActivity", "Could not initialize player: " + throwable.getMessage());
                     }
                 });
             }
@@ -103,15 +103,16 @@ public class MainActivity extends AppCompatActivity implements SpotifyPlayer.Not
         countDownTimer = new CountDownTimer(playTime, 10) {
 
             public void onTick(long millisUntilFinished) {
-                //Log.d("MainActivity", "Play seconds remaining " + millisUntilFinished / 1000);
+                //Log.d("PlayActivity", "Play seconds remaining " + millisUntilFinished / 1000);
                 remainingTime = millisUntilFinished;
                 timeTextView.setText(timerFormat.format(remainingTime / 1000.0));
             }
 
             public void onFinish() {
-                Log.d("MainActivity", "Play done, pausing music for: " + PAUSE_TIME / 1000);
+                Log.d("PlayActivity", "Play done, pausing music for: " + PAUSE_TIME / 1000);
                 player.pause(null);
                 statusTextView.setText(R.string.paused);
+                container.setBackgroundColor(ContextCompat.getColor(PlayActivity.this, R.color.backgroundPaused));
                 startPauseCountDown(PAUSE_TIME);
             }
         };
@@ -122,15 +123,16 @@ public class MainActivity extends AppCompatActivity implements SpotifyPlayer.Not
         countDownTimer = new CountDownTimer(pauseTime, 10) {
 
             public void onTick(long millisUntilFinished) {
-                //Log.d("MainActivity", "Pause seconds remaining " + millisUntilFinished / 1000);
+                //Log.d("PlayActivity", "Pause seconds remaining " + millisUntilFinished / 1000);
                 remainingTime = millisUntilFinished;
                 timeTextView.setText(timerFormat.format(remainingTime / 1000.0));
             }
 
             public void onFinish() {
-                Log.d("MainActivity", "Pause done, playing music for "+ PLAY_TIME / 1000);
+                Log.d("PlayActivity", "Pause done, playing music for "+ PLAY_TIME / 1000);
                 player.skipToNext(null);
                 statusTextView.setText(R.string.playing);
+                container.setBackgroundColor(ContextCompat.getColor(PlayActivity.this, R.color.backgroundPlaying));
                 startPlayCountdown(PLAY_TIME);
             }
         };
@@ -145,7 +147,7 @@ public class MainActivity extends AppCompatActivity implements SpotifyPlayer.Not
 
     @Override
     public void onPlaybackEvent(PlayerEvent playerEvent) {
-        Log.d("MainActivity", "Playback event received: " + playerEvent.name());
+        Log.d("PlayActivity", "Playback event received: " + playerEvent.name());
 
         switch (playerEvent) {
             case kSpPlaybackNotifyPlay:
@@ -163,11 +165,12 @@ public class MainActivity extends AppCompatActivity implements SpotifyPlayer.Not
         Metadata.Track currentTrack = metadata.currentTrack;
 
         artistTextView.setText(currentTrack.artistName + " - "+ currentTrack.name);
+
     }
 
     @Override
     public void onPlaybackError(Error error) {
-        Log.d("MainActivity", "Playback error received: " + error.name());
+        Log.d("PlayActivity", "Playback error received: " + error.name());
         switch (error) {
             // Handle error type as necessary
             default:
@@ -177,7 +180,7 @@ public class MainActivity extends AppCompatActivity implements SpotifyPlayer.Not
 
     @Override
     public void onLoggedIn() {
-        Log.d("MainActivity", "User logged in");
+        Log.d("PlayActivity", "User logged in");
 
         player.playUri(null, "spotify:user:johanbrook:playlist:2mtlhuFVOFMn6Ho3JmrLc2", 0, 0);
         startPlayCountdown(PLAY_TIME);
@@ -186,22 +189,22 @@ public class MainActivity extends AppCompatActivity implements SpotifyPlayer.Not
 
     @Override
     public void onLoggedOut() {
-        Log.d("MainActivity", "User logged out");
+        Log.d("PlayActivity", "User logged out");
     }
 
     @Override
     public void onLoginFailed(Error error) {
-        Log.d("MainActivity", "Login failed: " + error.name());
+        Log.d("PlayActivity", "Login failed: " + error.name());
     }
 
     @Override
     public void onTemporaryError() {
-        Log.d("MainActivity", "Temporary error occurred");
+        Log.d("PlayActivity", "Temporary error occurred");
     }
 
     @Override
     public void onConnectionMessage(String message) {
-        Log.d("MainActivity", "Received connection message: " + message);
+        Log.d("PlayActivity", "Received connection message: " + message);
     }
 
     public void playButtonClicked(View view) {
@@ -211,7 +214,8 @@ public class MainActivity extends AppCompatActivity implements SpotifyPlayer.Not
             playPauseButton.setImageDrawable(getResources().getDrawable(R.drawable.ic_play_circle_outline));
             statusTextView.setText(R.string.paused);
             paused = true;
-            container.setBackgroundColor(Color.RED);
+            int pauseColor = ContextCompat.getColor(this, R.color.backgroundPaused);
+            container.setBackgroundColor(pauseColor);
         }
         else {
             playPauseButton.setImageDrawable(getResources().getDrawable(R.drawable.ic_pause_circle_outline));
@@ -219,7 +223,7 @@ public class MainActivity extends AppCompatActivity implements SpotifyPlayer.Not
             startPlayCountdown(remainingTime);
             statusTextView.setText(R.string.playing);
             paused = false;
-            container.setBackgroundColor(Color.GREEN);
+            container.setBackgroundColor(ContextCompat.getColor(this, R.color.backgroundPlaying));
         }
     }
 

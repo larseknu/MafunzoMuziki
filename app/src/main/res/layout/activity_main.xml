@@ -4,9 +4,9 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    tools:context="no.hiof.larseknu.mafonzomuziki.MainActivity"
+    tools:context="no.hiof.larseknu.mafonzomuziki.PlayActivity"
     android:id="@+id/container"
-    android:background="co">
+    android:background="@color/backgroundPlaying">
 
 
     <TextView
@@ -17,7 +17,7 @@
         android:layout_marginEnd="8dp"
         android:layout_marginStart="8dp"
         android:layout_marginTop="8dp"
-        android:text="Time"
+        android:text="@string/time"
         android:textSize="128sp"
         app:layout_constraintBottom_toTopOf="@+id/artistTextView"
         app:layout_constraintEnd_toEndOf="parent"
@@ -31,7 +31,7 @@
         android:layout_marginBottom="8dp"
         android:layout_marginEnd="8dp"
         android:layout_marginStart="8dp"
-        android:text="Song"
+        android:text="@string/song"
         app:layout_constraintBottom_toTopOf="@+id/statusTextView"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent" />
@@ -43,7 +43,7 @@
         android:layout_marginBottom="8dp"
         android:layout_marginEnd="8dp"
         android:layout_marginStart="8dp"
-        android:text="Status"
+        android:text="@string/status"
         app:layout_constraintBottom_toTopOf="@+id/playPauseButton"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintHorizontal_bias="0.501"
