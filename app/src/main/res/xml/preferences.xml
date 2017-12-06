@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <no.hiof.larseknu.mafonzomuziki.preferences.NumberPickerPreference
+        android:key="pref_interval_play"
+        android:title="Set play time"
+        android:defaultValue="50" />
+
+    <no.hiof.larseknu.mafonzomuziki.preferences.NumberPickerPreference
+        android:key="pref_interval_pause"
+        android:title="Set pause time"
+        android:defaultValue="10" />
+
+</PreferenceScreen>

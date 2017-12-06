@@ -1,11 +1,15 @@
 package no.hiof.larseknu.mafonzomuziki;
 
 import android.content.Intent;
+import android.net.Uri;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.support.v7.widget.GridLayoutManager;
 import android.support.v7.widget.RecyclerView;
 import android.util.Log;
+import android.view.Menu;
+import android.view.MenuInflater;
+import android.view.MenuItem;
 import android.view.View;
 
 import com.spotify.sdk.android.authentication.AuthenticationClient;
@@ -50,6 +54,8 @@ public class MainActivity extends AppCompatActivity implements SpotifyPlayer.Not
     ArrayList<PlaylistSimple> playlists;
     PlaylistRecyclerAdapter playlistAdapter;
 
+    String accessToken;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -61,11 +67,39 @@ public class MainActivity extends AppCompatActivity implements SpotifyPlayer.Not
         builder.setScopes(new String[]{"user-read-private", "streaming"});
         AuthenticationRequest request = builder.build();
 
-        AuthenticationClient.openLoginActivity(this, REQUEST_CODE, request);
+
+        //AuthenticationClient.openLoginActivity(this, REQUEST_CODE, request);
+
+        AuthenticationClient.openLoginInBrowser(this, request);
 
         playlists = new ArrayList<>();
 
         setUpRecyclerView();
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        Uri uri = intent.getData();
+        if (uri != null) {
+            AuthenticationResponse response = AuthenticationResponse.fromUri(uri);
+            switch (response.getType()) {
+                // Response was successful and contains auth token
+                case TOKEN:
+                    // Handle successful response
+                    initializePlayerOnSuccessfullLogin(response.getAccessToken());
+                    break;
+
+                // Auth flow returned an error
+                case ERROR:
+                    // Handle error response
+                    break;
+
+                // Most likely auth flow was cancelled
+                default:
+                    // Handle other cases
+            }
+        }
     }
 
     @Override
@@ -76,29 +110,36 @@ public class MainActivity extends AppCompatActivity implements SpotifyPlayer.Not
         if (requestCode == REQUEST_CODE) {
             AuthenticationResponse response = AuthenticationClient.getResponse(resultCode, intent);
             if (response.getType() == AuthenticationResponse.Type.TOKEN) {
-                final Config playerConfig = new Config(this, response.getAccessToken(), CLIENT_ID);
-
-                SpotifyApi api = new SpotifyApi();
-
-                api.setAccessToken(response.getAccessToken());
-
-                spotifyService = api.getService();
-
-                Spotify.getPlayer(playerConfig, this, new SpotifyPlayer.InitializationObserver() {
-                    @Override
-                    public void onInitialized(SpotifyPlayer spotifyPlayer) {
-                        player = spotifyPlayer;
-                        player.addConnectionStateCallback(MainActivity.this);
-                        player.addNotificationCallback(MainActivity.this);
-                    }
-
-                    @Override
-                    public void onError(Throwable throwable) {
-                        Log.e("MainActivity", "Could not initialize player: " + throwable.getMessage());
-                    }
-                });
+                initializePlayerOnSuccessfullLogin(response.getAccessToken());
             }
         }
+    }
+
+
+    private void initializePlayerOnSuccessfullLogin(String accessToken) {
+        this.accessToken = accessToken;
+
+        final Config playerConfig = new Config(this, accessToken, CLIENT_ID);
+
+        SpotifyApi api = new SpotifyApi();
+
+        api.setAccessToken(accessToken);
+
+        spotifyService = api.getService();
+
+        Spotify.getPlayer(playerConfig, this, new SpotifyPlayer.InitializationObserver() {
+            @Override
+            public void onInitialized(SpotifyPlayer spotifyPlayer) {
+                player = spotifyPlayer;
+                player.addConnectionStateCallback(MainActivity.this);
+                player.addNotificationCallback(MainActivity.this);
+            }
+
+            @Override
+            public void onError(Throwable throwable) {
+                Log.e("MainActivity", "Could not initialize player: " + throwable.getMessage());
+            }
+        });
     }
 
     @Override
@@ -187,6 +228,7 @@ public class MainActivity extends AppCompatActivity implements SpotifyPlayer.Not
 
                 Intent intent = new Intent(MainActivity.this, PlayActivity.class);
                 intent.putExtra("playlist", playlist);
+                intent.putExtra("accessToken", accessToken);
 
                 player.removeConnectionStateCallback(MainActivity.this);
                 player.removeNotificationCallback(MainActivity.this);
@@ -219,5 +261,24 @@ public class MainActivity extends AppCompatActivity implements SpotifyPlayer.Not
     @Override
     public void onConnectionMessage(String message) {
         Log.d("MainActivity", "Received connection message: " + message);
+    }
+
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        MenuInflater inflater = getMenuInflater();
+        inflater.inflate(R.menu.main_menu, menu);
+        return true;
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        switch (item.getItemId()) {
+            case R.id.settingsMenuItem:
+                Intent intent = new Intent(this, SettingsActivity.class);
+                startActivity(intent);
+                return true;
+            default:
+                return super.onOptionsItemSelected(item);
+        }
     }
 }

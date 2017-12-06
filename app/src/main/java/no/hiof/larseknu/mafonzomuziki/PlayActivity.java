@@ -1,7 +1,8 @@
 package no.hiof.larseknu.mafonzomuziki;
 
-import android.content.Intent;
+import android.content.SharedPreferences;
 import android.os.CountDownTimer;
+import android.preference.PreferenceManager;
 import android.support.constraint.ConstraintLayout;
 import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
@@ -10,9 +11,9 @@ import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
 import android.widget.ImageButton;
+import android.widget.ImageView;
 import android.widget.TextView;
 
-import com.spotify.sdk.android.authentication.AuthenticationClient;
 import com.spotify.sdk.android.authentication.AuthenticationRequest;
 import com.spotify.sdk.android.authentication.AuthenticationResponse;
 import com.spotify.sdk.android.player.Config;
@@ -23,13 +24,14 @@ import com.spotify.sdk.android.player.Error;
 import com.spotify.sdk.android.player.PlayerEvent;
 import com.spotify.sdk.android.player.Spotify;
 import com.spotify.sdk.android.player.SpotifyPlayer;
+import com.squareup.picasso.Picasso;
 
 import java.text.DecimalFormat;
 
 import kaaes.spotify.webapi.android.models.PlaylistSimple;
 
 public class PlayActivity extends AppCompatActivity implements SpotifyPlayer.NotificationCallback, ConnectionStateCallback {
-    private static final String TAG = "Mafonzo";
+    private static final String TAG = "Mafunzo";
 
     // region top secret
     private static final String CLIENT_ID = "0f835bef4ef44912ac05055c3d099b1b";
@@ -42,6 +44,7 @@ public class PlayActivity extends AppCompatActivity implements SpotifyPlayer.Not
     private TextView artistTextView;
     private TextView statusTextView;
     private TextView timeTextView;
+    private ImageView coverArtImageView;
     private ImageButton playPauseButton;
     private ConstraintLayout container;
 
@@ -49,10 +52,13 @@ public class PlayActivity extends AppCompatActivity implements SpotifyPlayer.Not
     private CountDownTimer countDownTimer;
     private boolean paused = false;
     private PlaylistSimple currentPlaylist;
+    private String accessToken;
 
     long remainingTime = 0;
-    private static long PAUSE_TIME = 10000;
-    private static long PLAY_TIME = 50000;
+    private static int DEFAULT_PAUSE_TIME = 10;
+    private static int DEFAULT_PLAY_TIME = 50;
+    private long userDefinedPlayTime;
+    private long userDefinedPauseTime;
     private static DecimalFormat timerFormat = new DecimalFormat("00.00");
 
     @Override
@@ -61,49 +67,40 @@ public class PlayActivity extends AppCompatActivity implements SpotifyPlayer.Not
         setContentView(R.layout.activity_play);
 
         currentPlaylist = getIntent().getParcelableExtra("playlist");
+        accessToken = getIntent().getStringExtra("accessToken");
 
-        AuthenticationRequest.Builder builder = new AuthenticationRequest.Builder(CLIENT_ID,
-                AuthenticationResponse.Type.TOKEN,
-                REDIRECT_URI);
-        builder.setScopes(new String[]{"user-read-private", "streaming", "playlist-read-private",
-                "playlist-modify-private", "playlist-modify-public"});
-        AuthenticationRequest request = builder.build();
-
-        AuthenticationClient.openLoginActivity(this, REQUEST_CODE, request);
+        SharedPreferences sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this);
+        userDefinedPlayTime = sharedPreferences.getInt("pref_interval_play", DEFAULT_PLAY_TIME) * 1000;
+        userDefinedPauseTime = sharedPreferences.getInt("pref_interval_pause", DEFAULT_PAUSE_TIME) * 1000;
 
         artistTextView = findViewById(R.id.artistTextView);
         statusTextView = findViewById(R.id.statusTextView);
         timeTextView = findViewById(R.id.timeTextView);
+        coverArtImageView = findViewById(R.id.coverArtImageView);
         playPauseButton = findViewById(R.id.playPauseButton);
         container = findViewById(R.id.container);
+
+        if (!accessToken.isEmpty())
+            initializePlayerOnSuccessfullAuthentication(accessToken);
     }
 
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent intent) {
-        super.onActivityResult(requestCode, resultCode, intent);
-
-        // Check if result comes from the correct activity
-        if (requestCode == REQUEST_CODE) {
-            AuthenticationResponse response = AuthenticationClient.getResponse(resultCode, intent);
-            if (response.getType() == AuthenticationResponse.Type.TOKEN) {
-                Config playerConfig = new Config(this, response.getAccessToken(), CLIENT_ID);
-                Spotify.getPlayer(playerConfig, this, new SpotifyPlayer.InitializationObserver() {
-                    @Override
-                    public void onInitialized(SpotifyPlayer spotifyPlayer) {
-                        player = spotifyPlayer;
-                        player.addConnectionStateCallback(PlayActivity.this);
-                        player.addNotificationCallback(PlayActivity.this);
-                        //player.setRepeat(null, true);
-                        startPlaylist(currentPlaylist.uri);
-                    }
-
-                    @Override
-                    public void onError(Throwable throwable) {
-                        Log.e("PlayActivity", "Could not initialize player: " + throwable.getMessage());
-                    }
-                });
+    private void initializePlayerOnSuccessfullAuthentication(String accessToken) {
+        Config playerConfig = new Config(this, accessToken, CLIENT_ID);
+        Spotify.getPlayer(playerConfig, this, new SpotifyPlayer.InitializationObserver() {
+            @Override
+            public void onInitialized(SpotifyPlayer spotifyPlayer) {
+                player = spotifyPlayer;
+                player.addConnectionStateCallback(PlayActivity.this);
+                player.addNotificationCallback(PlayActivity.this);
+                //player.setRepeat(null, true);
+                startPlaylist(currentPlaylist.uri);
             }
-        }
+
+            @Override
+            public void onError(Throwable throwable) {
+                Log.e("PlayActivity", "Could not initialize player: " + throwable.getMessage());
+            }
+        });
     }
 
     private void startPlayCountdown(long playTime) {
@@ -116,11 +113,11 @@ public class PlayActivity extends AppCompatActivity implements SpotifyPlayer.Not
             }
 
             public void onFinish() {
-                Log.d("PlayActivity", "Play done, pausing music for: " + PAUSE_TIME / 1000);
+                Log.d("PlayActivity", "Play done, pausing music for: " + userDefinedPauseTime / 1000);
                 player.pause(null);
                 statusTextView.setText(R.string.paused);
                 container.setBackgroundColor(ContextCompat.getColor(PlayActivity.this, R.color.backgroundPaused));
-                startPauseCountDown(PAUSE_TIME);
+                startPauseCountDown(userDefinedPauseTime);
             }
         };
         countDownTimer.start();
@@ -135,11 +132,11 @@ public class PlayActivity extends AppCompatActivity implements SpotifyPlayer.Not
             }
 
             public void onFinish() {
-                Log.d("PlayActivity", "Pause done, playing music for "+ PLAY_TIME / 1000);
+                Log.d("PlayActivity", "Pause done, playing music for "+ userDefinedPlayTime / 1000);
                 player.skipToNext(null);
                 statusTextView.setText(R.string.playing);
                 container.setBackgroundColor(ContextCompat.getColor(PlayActivity.this, R.color.backgroundPlaying));
-                startPlayCountdown(PLAY_TIME);
+                startPlayCountdown(userDefinedPlayTime);
             }
         };
         countDownTimer.start();
@@ -180,8 +177,16 @@ public class PlayActivity extends AppCompatActivity implements SpotifyPlayer.Not
     private void UpdateUIWithCurrentSong(Metadata metadata) {
         Metadata.Track currentTrack = metadata.currentTrack;
 
-        if (currentTrack.artistName != null && currentTrack.name != null)
-            artistTextView.setText(currentTrack.artistName + " - "+ currentTrack.name);
+        if (currentTrack != null) {
+            if (currentTrack.artistName != null && currentTrack.name != null)
+                artistTextView.setText(currentTrack.artistName + " - " + currentTrack.name);
+
+            if (currentTrack.albumCoverWebUrl != null) {
+                Picasso.with(this)
+                        .load(currentTrack.albumCoverWebUrl)
+                        .into(coverArtImageView);
+            }
+        }
     }
 
     @Override
@@ -201,7 +206,7 @@ public class PlayActivity extends AppCompatActivity implements SpotifyPlayer.Not
 
     private void startPlaylist(String uri) {
         player.playUri(null, uri, 0, 0);
-        startPlayCountdown(PLAY_TIME);
+        startPlayCountdown(userDefinedPlayTime);
         statusTextView.setText(R.string.playing);
     }
 
@@ -246,13 +251,21 @@ public class PlayActivity extends AppCompatActivity implements SpotifyPlayer.Not
     }
 
     public void skipNextButtonClicked(View view) {
-        player.skipToNext(defaultOperationCallback);
+        if (player.getMetadata().nextTrack != null)
+            player.skipToNext(defaultOperationCallback);
+        else
+            player.playUri(defaultOperationCallback, currentPlaylist.uri, 0, 0);
         if (paused)
             player.pause(defaultOperationCallback);
     }
 
     public void skipPreviousButtonClicked(View view) {
-        player.skipToPrevious(defaultOperationCallback);
+        if (player.getMetadata().prevTrack != null) {
+            player.skipToPrevious(defaultOperationCallback);
+        }
+        else
+            player.seekToPosition(defaultOperationCallback, 0);
+
         if (paused)
             player.pause(defaultOperationCallback);
     }
@@ -260,7 +273,7 @@ public class PlayActivity extends AppCompatActivity implements SpotifyPlayer.Not
     Player.OperationCallback defaultOperationCallback = new Player.OperationCallback() {
         @Override
         public void onSuccess() {
-
+            Log.d(TAG, "Success: " + this.toString());
         }
 
         @Override
