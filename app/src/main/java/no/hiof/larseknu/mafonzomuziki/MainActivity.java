@@ -67,7 +67,6 @@ public class MainActivity extends AppCompatActivity implements SpotifyPlayer.Not
         builder.setScopes(new String[]{"user-read-private", "streaming"});
         AuthenticationRequest request = builder.build();
 
-
         //AuthenticationClient.openLoginActivity(this, REQUEST_CODE, request);
 
         AuthenticationClient.openLoginInBrowser(this, request);

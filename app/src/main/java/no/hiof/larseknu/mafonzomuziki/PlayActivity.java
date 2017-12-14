@@ -1,7 +1,13 @@
 package no.hiof.larseknu.mafonzomuziki;
 
+import android.content.ComponentName;
+import android.content.Intent;
+import android.content.ServiceConnection;
 import android.content.SharedPreferences;
 import android.os.CountDownTimer;
+import android.os.Handler;
+import android.os.IBinder;
+import android.os.ResultReceiver;
 import android.preference.PreferenceManager;
 import android.support.constraint.ConstraintLayout;
 import android.support.v4.content.ContextCompat;
@@ -30,14 +36,13 @@ import java.text.DecimalFormat;
 
 import kaaes.spotify.webapi.android.models.PlaylistSimple;
 
-public class PlayActivity extends AppCompatActivity implements SpotifyPlayer.NotificationCallback, ConnectionStateCallback {
+public class PlayActivity extends AppCompatActivity  {
     private static final String TAG = "Mafunzo";
 
-    // region top secret
-    private static final String CLIENT_ID = "0f835bef4ef44912ac05055c3d099b1b";
 
-    private static final String REDIRECT_URI = "mafonzomuziki://callback";
-    // endregion
+
+    private IntervalMusicService intervalMusicService;
+    private boolean isBound = false;
 
     private static final int REQUEST_CODE = 42;
 
@@ -50,20 +55,33 @@ public class PlayActivity extends AppCompatActivity implements SpotifyPlayer.Not
     private ImageButton skipPreviousButton;
     private ConstraintLayout container;
 
-    private Player player;
-    private CountDownTimer countDownTimer;
     private boolean paused = false;
     private PlaylistSimple currentPlaylist;
     private String accessToken;
 
     private boolean isManuallyPaused = false;
 
-    long remainingTime = 0;
+
     private static int DEFAULT_PAUSE_TIME = 10;
     private static int DEFAULT_PLAY_TIME = 50;
     private long userDefinedPlayTime;
     private long userDefinedPauseTime;
     private static DecimalFormat timerFormat = new DecimalFormat("00.00");
+
+    private ServiceConnection connection = new ServiceConnection() {
+        @Override
+        public void onServiceConnected(ComponentName componentName, IBinder iBinder) {
+            IntervalMusicService.MyLocalBinder myLocalBinder = (IntervalMusicService.MyLocalBinder) iBinder;
+
+            intervalMusicService = myLocalBinder.getService();
+            isBound = true;
+        }
+
+        @Override
+        public void onServiceDisconnected(ComponentName componentName) {
+            isBound = false;
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -88,90 +106,42 @@ public class PlayActivity extends AppCompatActivity implements SpotifyPlayer.Not
 
         playPauseButton.setOnClickListener(PlayPausedButtonClickedWhileIntervalStateIsPlaying);
 
-        if (!accessToken.isEmpty())
-            initializePlayerOnSuccessfullAuthentication(accessToken);
+        IntervalMusicReceiver intervalMusicReceiver = new IntervalMusicReceiver(null);
+
+        Intent intent = new Intent(this, IntervalMusicService.class);
+        intent.putExtra("accessToken", accessToken);
+        intent.putExtra(IntervalMusicService.EXTRA_RESULT_RECEIVER, intervalMusicReceiver);
+        startService(intent);
+
+        //if (!accessToken.isEmpty())
+        //    initializePlayerOnSuccessfullAuthentication(accessToken);
     }
 
-    private void initializePlayerOnSuccessfullAuthentication(String accessToken) {
-        Config playerConfig = new Config(this, accessToken, CLIENT_ID);
-        Spotify.getPlayer(playerConfig, this, new SpotifyPlayer.InitializationObserver() {
-            @Override
-            public void onInitialized(SpotifyPlayer spotifyPlayer) {
-                player = spotifyPlayer;
-                player.addConnectionStateCallback(PlayActivity.this);
-                player.addNotificationCallback(PlayActivity.this);
-                //player.setRepeat(null, true);
+    @Override
+    protected void onStart() {
+        super.onStart();
 
-                if (currentPlaylist != null)
-                    startPlaylist(currentPlaylist.uri);
-                else if (player.getPlaybackState().isPlaying) {
-                    startPlayCountdown(userDefinedPlayTime);
-                    UpdateUIWithCurrentSong(player.getMetadata());
-                    statusTextView.setText(R.string.playing);
-                }
-            }
-
-            @Override
-            public void onError(Throwable throwable) {
-                Log.e("PlayActivity", "Could not initialize player: " + throwable.getMessage());
-            }
-        });
+        Intent intent = new Intent(this, IntervalMusicService.class);
+        bindService(intent, connection, BIND_AUTO_CREATE);
     }
 
-    private void startPlayCountdown(long playTime) {
-        countDownTimer = new CountDownTimer(playTime, 10) {
-
-            public void onTick(long millisUntilFinished) {
-                //Log.d("PlayActivity", "Play seconds remaining " + millisUntilFinished / 1000);
-                remainingTime = millisUntilFinished;
-                timeTextView.setText(timerFormat.format(remainingTime / 1000.0));
-            }
-
-            public void onFinish() {
-                Log.d("PlayActivity", "Play done, pausing music for: " + userDefinedPauseTime / 1000);
-                player.pause(null);
-                statusTextView.setText(R.string.paused);
-                container.setBackgroundColor(ContextCompat.getColor(PlayActivity.this, R.color.backgroundPaused));
-                startPauseCountDown(userDefinedPauseTime);
-                playPauseButton.setOnClickListener(playPausedButtonClickedWhileIntervalStateIsPaused);
-                skipNextButton.setEnabled(false);
-                skipPreviousButton.setEnabled(false);
-            }
-        };
-        countDownTimer.start();
-    }
-
-    private void startPauseCountDown(long pauseTime) {
-        countDownTimer = new CountDownTimer(pauseTime, 10) {
-
-            public void onTick(long millisUntilFinished) {
-                remainingTime = millisUntilFinished;
-                timeTextView.setText(timerFormat.format(remainingTime / 1000.0));
-            }
-
-            public void onFinish() {
-                Log.d("PlayActivity", "Pause done, playing music for "+ userDefinedPlayTime / 1000);
-                player.skipToNext(null);
-                statusTextView.setText(R.string.playing);
-                container.setBackgroundColor(ContextCompat.getColor(PlayActivity.this, R.color.backgroundPlaying));
-                startPlayCountdown(userDefinedPlayTime);
-                playPauseButton.setOnClickListener(PlayPausedButtonClickedWhileIntervalStateIsPlaying);
-                skipNextButton.setEnabled(true);
-                skipPreviousButton.setEnabled(true);
-            }
-        };
-        countDownTimer.start();
+    @Override
+    protected void onStop() {
+        super.onStop();
+        unbindService(connection);
     }
 
     @Override
     protected void onDestroy() {
-        player.removeConnectionStateCallback(PlayActivity.this);
-        player.removeNotificationCallback(PlayActivity.this);
-        Spotify.destroyPlayer(this);
         Log.d(TAG, 	"References: " + Spotify.getReferenceCount());
-        //player.destroy();
         super.onDestroy();
     }
+
+
+
+
+
+
 
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event)
@@ -183,44 +153,9 @@ public class PlayActivity extends AppCompatActivity implements SpotifyPlayer.Not
         return super.onKeyDown(keyCode, event);
     }
 
-    @Override
-    public void onPlaybackEvent(PlayerEvent playerEvent) {
-        Log.d("PlayActivity", "Playback event received: " + playerEvent.name());
 
-        switch (playerEvent) {
-            case kSpPlaybackNotifyMetadataChanged:
-                UpdateUIWithCurrentSong(player.getMetadata());
-            default:
-                break;
-        }
-    }
 
-    private void UpdateUIWithCurrentSong(Metadata metadata) {
-        Metadata.Track currentTrack = metadata.currentTrack;
-
-        if (currentTrack != null) {
-            if (currentTrack.artistName != null && currentTrack.name != null)
-                artistTextView.setText(currentTrack.artistName + " - " + currentTrack.name);
-
-            if (currentTrack.albumCoverWebUrl != null) {
-                Picasso.with(this)
-                        .load(currentTrack.albumCoverWebUrl)
-                        .into(coverArtImageView);
-            }
-        }
-    }
-
-    @Override
-    public void onPlaybackError(Error error) {
-        Log.d("PlayActivity", "Playback error received: " + error.name());
-        switch (error) {
-            // Handle error type as necessary
-            default:
-                break;
-        }
-    }
-
-    @Override
+    /*@Override
     public void onLoggedIn() {
         Log.d("PlayActivity", "User logged in");
     }
@@ -229,32 +164,15 @@ public class PlayActivity extends AppCompatActivity implements SpotifyPlayer.Not
         player.playUri(null, uri, 0, 0);
         startPlayCountdown(userDefinedPlayTime);
         statusTextView.setText(R.string.playing);
-    }
-
-    @Override
-    public void onLoggedOut() {
-        Log.d("PlayActivity", "User logged out");
-    }
-
-    @Override
-    public void onLoginFailed(Error error) {
-        Log.d("PlayActivity", "Login failed: " + error.name());
-    }
-
-    @Override
-    public void onTemporaryError() {
-        Log.d("PlayActivity", "Temporary error occurred");
-    }
-
-    @Override
-    public void onConnectionMessage(String message) {
-        Log.d("PlayActivity", "Received connection message: " + message);
-    }
+    }*/
 
 
     OnClickListener PlayPausedButtonClickedWhileIntervalStateIsPlaying = new OnClickListener() {
         @Override
         public void onClick(View view) {
+            intervalMusicService.playMusic(currentPlaylist.uri);
+
+            /*
             if (player.getPlaybackState().isPlaying) {
                 player.pause(defaultOperationCallback);
                 countDownTimer.cancel();
@@ -271,11 +189,11 @@ public class PlayActivity extends AppCompatActivity implements SpotifyPlayer.Not
                 statusTextView.setText(R.string.playing);
                 paused = false;
                 container.setBackgroundColor(ContextCompat.getColor(view.getContext(), R.color.backgroundPlaying));
-            }
+            }*/
         }
     };
 
-    OnClickListener playPausedButtonClickedWhileIntervalStateIsPaused = new OnClickListener() {
+    /*OnClickListener playPausedButtonClickedWhileIntervalStateIsPaused = new OnClickListener() {
         @Override
         public void onClick(View view) {
             if (!isManuallyPaused) {
@@ -309,7 +227,7 @@ public class PlayActivity extends AppCompatActivity implements SpotifyPlayer.Not
 
         if (paused)
             player.pause(defaultOperationCallback);
-    }
+    }*/
 
     Player.OperationCallback defaultOperationCallback = new Player.OperationCallback() {
         @Override
@@ -322,4 +240,64 @@ public class PlayActivity extends AppCompatActivity implements SpotifyPlayer.Not
             Log.d(TAG, error.toString());
         }
     };
+
+
+    private class IntervalMusicReceiver extends ResultReceiver {
+        public IntervalMusicReceiver(Handler handler) {
+            super(handler);
+        }
+
+        @Override
+        protected void onReceiveResult(int resultCode, Bundle resultData) {
+            super.onReceiveResult(resultCode, resultData);
+
+            Log.i("MyResultReceiver", "Thread: " + Thread.currentThread().getName());
+
+            switch (resultCode) {
+                case IntervalMusicService.RESULT_CODE_ARTIST:
+                    final Metadata metadata = resultData.getParcelable(IntervalMusicService.RESULT_DATA_KEY_ARTIST);
+
+                    artistTextView.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            Log.i("IntervalMusicReceiver", "Thread: " + Thread.currentThread().getName());
+                            UpdateUIWithCurrentSong(metadata);
+                        }
+                    });
+                    break;
+                case IntervalMusicService.RESULT_CODE_PLAYBACK_PAUSED:
+                    statusTextView.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            statusTextView.setText(R.string.paused);
+                        }
+                    });
+                    break;
+                case IntervalMusicService.RESULT_CODE_TIMESTAMP_UPDATED:
+                    final Long timeStamp = resultData.getLong(IntervalMusicService.RESULT_DATA_KEY_TIMESTAMP);
+
+                    timeTextView.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            timeTextView.setText(timerFormat.format(timeStamp / 1000.0));
+                        }
+                    });
+            }
+        }
+    }
+
+    private void UpdateUIWithCurrentSong(Metadata metadata) {
+        Metadata.Track currentTrack = metadata.currentTrack;
+
+        if (currentTrack != null) {
+            if (currentTrack.artistName != null && currentTrack.name != null)
+                artistTextView.setText(currentTrack.artistName + " - " + currentTrack.name);
+
+            if (currentTrack.albumCoverWebUrl != null) {
+                Picasso.with(this)
+                        .load(currentTrack.albumCoverWebUrl)
+                        .into(coverArtImageView);
+            }
+        }
+    }
 }
