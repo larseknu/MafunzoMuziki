@@ -10,15 +10,15 @@ import android.os.Bundle;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
+import android.view.View.OnClickListener;
 import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.TextView;
 
-import com.spotify.sdk.android.authentication.AuthenticationRequest;
-import com.spotify.sdk.android.authentication.AuthenticationResponse;
 import com.spotify.sdk.android.player.Config;
 import com.spotify.sdk.android.player.ConnectionStateCallback;
 import com.spotify.sdk.android.player.Metadata;
+import com.spotify.sdk.android.player.PlaybackState;
 import com.spotify.sdk.android.player.Player;
 import com.spotify.sdk.android.player.Error;
 import com.spotify.sdk.android.player.PlayerEvent;
@@ -46,6 +46,8 @@ public class PlayActivity extends AppCompatActivity implements SpotifyPlayer.Not
     private TextView timeTextView;
     private ImageView coverArtImageView;
     private ImageButton playPauseButton;
+    private ImageButton skipNextButton;
+    private ImageButton skipPreviousButton;
     private ConstraintLayout container;
 
     private Player player;
@@ -53,6 +55,8 @@ public class PlayActivity extends AppCompatActivity implements SpotifyPlayer.Not
     private boolean paused = false;
     private PlaylistSimple currentPlaylist;
     private String accessToken;
+
+    private boolean isManuallyPaused = false;
 
     long remainingTime = 0;
     private static int DEFAULT_PAUSE_TIME = 10;
@@ -78,7 +82,11 @@ public class PlayActivity extends AppCompatActivity implements SpotifyPlayer.Not
         timeTextView = findViewById(R.id.timeTextView);
         coverArtImageView = findViewById(R.id.coverArtImageView);
         playPauseButton = findViewById(R.id.playPauseButton);
+        skipNextButton = findViewById(R.id.skipNextButton);
+        skipPreviousButton = findViewById(R.id.skipPreviousButton);
         container = findViewById(R.id.container);
+
+        playPauseButton.setOnClickListener(PlayPausedButtonClickedWhileIntervalStateIsPlaying);
 
         if (!accessToken.isEmpty())
             initializePlayerOnSuccessfullAuthentication(accessToken);
@@ -93,7 +101,14 @@ public class PlayActivity extends AppCompatActivity implements SpotifyPlayer.Not
                 player.addConnectionStateCallback(PlayActivity.this);
                 player.addNotificationCallback(PlayActivity.this);
                 //player.setRepeat(null, true);
-                startPlaylist(currentPlaylist.uri);
+
+                if (currentPlaylist != null)
+                    startPlaylist(currentPlaylist.uri);
+                else if (player.getPlaybackState().isPlaying) {
+                    startPlayCountdown(userDefinedPlayTime);
+                    UpdateUIWithCurrentSong(player.getMetadata());
+                    statusTextView.setText(R.string.playing);
+                }
             }
 
             @Override
@@ -118,6 +133,9 @@ public class PlayActivity extends AppCompatActivity implements SpotifyPlayer.Not
                 statusTextView.setText(R.string.paused);
                 container.setBackgroundColor(ContextCompat.getColor(PlayActivity.this, R.color.backgroundPaused));
                 startPauseCountDown(userDefinedPauseTime);
+                playPauseButton.setOnClickListener(playPausedButtonClickedWhileIntervalStateIsPaused);
+                skipNextButton.setEnabled(false);
+                skipPreviousButton.setEnabled(false);
             }
         };
         countDownTimer.start();
@@ -137,6 +155,9 @@ public class PlayActivity extends AppCompatActivity implements SpotifyPlayer.Not
                 statusTextView.setText(R.string.playing);
                 container.setBackgroundColor(ContextCompat.getColor(PlayActivity.this, R.color.backgroundPlaying));
                 startPlayCountdown(userDefinedPlayTime);
+                playPauseButton.setOnClickListener(PlayPausedButtonClickedWhileIntervalStateIsPlaying);
+                skipNextButton.setEnabled(true);
+                skipPreviousButton.setEnabled(true);
             }
         };
         countDownTimer.start();
@@ -157,7 +178,7 @@ public class PlayActivity extends AppCompatActivity implements SpotifyPlayer.Not
     {
         if ((keyCode == KeyEvent.KEYCODE_BACK))
         {
-            countDownTimer.cancel();
+            //countDownTimer.cancel();
         }
         return super.onKeyDown(keyCode, event);
     }
@@ -230,25 +251,45 @@ public class PlayActivity extends AppCompatActivity implements SpotifyPlayer.Not
         Log.d("PlayActivity", "Received connection message: " + message);
     }
 
-    public void playButtonClicked(View view) {
-        if (player.getPlaybackState().isPlaying) {
-            player.pause(defaultOperationCallback);
-            countDownTimer.cancel();
-            playPauseButton.setImageDrawable(getResources().getDrawable(R.drawable.ic_play_circle_outline));
-            statusTextView.setText(R.string.paused);
-            paused = true;
-            int pauseColor = ContextCompat.getColor(this, R.color.backgroundPaused);
-            container.setBackgroundColor(pauseColor);
+
+    OnClickListener PlayPausedButtonClickedWhileIntervalStateIsPlaying = new OnClickListener() {
+        @Override
+        public void onClick(View view) {
+            if (player.getPlaybackState().isPlaying) {
+                player.pause(defaultOperationCallback);
+                countDownTimer.cancel();
+                playPauseButton.setImageDrawable(getResources().getDrawable(R.drawable.ic_play_circle_outline));
+                statusTextView.setText(R.string.paused);
+                paused = true;
+                int pauseColor = ContextCompat.getColor(view.getContext(), R.color.backgroundPaused);
+                container.setBackgroundColor(pauseColor);
+            }
+            else {
+                playPauseButton.setImageDrawable(getResources().getDrawable(R.drawable.ic_pause_circle_outline));
+                player.resume(defaultOperationCallback);
+                startPlayCountdown(remainingTime);
+                statusTextView.setText(R.string.playing);
+                paused = false;
+                container.setBackgroundColor(ContextCompat.getColor(view.getContext(), R.color.backgroundPlaying));
+            }
         }
-        else {
-            playPauseButton.setImageDrawable(getResources().getDrawable(R.drawable.ic_pause_circle_outline));
-            player.resume(defaultOperationCallback);
-            startPlayCountdown(remainingTime);
-            statusTextView.setText(R.string.playing);
-            paused = false;
-            container.setBackgroundColor(ContextCompat.getColor(this, R.color.backgroundPlaying));
+    };
+
+    OnClickListener playPausedButtonClickedWhileIntervalStateIsPaused = new OnClickListener() {
+        @Override
+        public void onClick(View view) {
+            if (!isManuallyPaused) {
+                countDownTimer.cancel();
+                playPauseButton.setImageDrawable(getResources().getDrawable(R.drawable.ic_play_circle_outline));
+                isManuallyPaused = true;
+            }
+            else {
+                startPauseCountDown(remainingTime);
+                playPauseButton.setImageDrawable(getResources().getDrawable(R.drawable.ic_pause_circle_outline));
+                isManuallyPaused = false;
+            }
         }
-    }
+    };
 
     public void skipNextButtonClicked(View view) {
         if (player.getMetadata().nextTrack != null)

@@ -274,9 +274,13 @@ public class MainActivity extends AppCompatActivity implements SpotifyPlayer.Not
     public boolean onOptionsItemSelected(MenuItem item) {
         switch (item.getItemId()) {
             case R.id.settingsMenuItem:
-                Intent intent = new Intent(this, SettingsActivity.class);
-                startActivity(intent);
+                Intent settingsIntent = new Intent(this, SettingsActivity.class);
+                startActivity(settingsIntent);
                 return true;
+            case R.id.playActivityMenuItem:
+                Intent playActivityIntent = new Intent(this, PlayActivity.class);
+                playActivityIntent.putExtra("accessToken", accessToken);
+                startActivity(playActivityIntent);
             default:
                 return super.onOptionsItemSelected(item);
         }

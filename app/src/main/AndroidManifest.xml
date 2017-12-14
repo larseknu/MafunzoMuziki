@@ -31,7 +31,7 @@
                     android:scheme="mafonzomuziki" />
             </intent-filter>
         </activity>
-        <activity android:name=".PlayActivity"></activity>
+        <activity android:name=".PlayActivity" />
 
         <!-- Needed for Spotify LoginActivity to work -->
         <activity
@@ -40,6 +40,11 @@
         <activity
             android:name=".SettingsActivity"
             android:label="@string/title_activity_settings" />
+
+        <service
+            android:name=".IntervalMusicService"
+            android:enabled="true"
+            android:exported="true"></service>
     </application>
 
 </manifest>

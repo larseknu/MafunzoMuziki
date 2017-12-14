@@ -4,4 +4,7 @@
     <item
         android:id="@+id/settingsMenuItem"
         android:title="@string/settings" />
+    <item
+        android:id="@+id/playActivityMenuItem"
+        android:title="Back to music" />
 </menu>
