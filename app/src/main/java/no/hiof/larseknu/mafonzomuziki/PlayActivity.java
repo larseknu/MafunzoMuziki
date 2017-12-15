@@ -47,6 +47,8 @@ public class PlayActivity extends AppCompatActivity  {
     private PlaylistSimple currentPlaylist;
     private String accessToken;
 
+    private IntervalMusicReceiver intervalMusicReceiver;
+
     private static DecimalFormat timerFormat = new DecimalFormat("00.00");
 
     private ServiceConnection connection = new ServiceConnection() {
@@ -56,12 +58,21 @@ public class PlayActivity extends AppCompatActivity  {
 
             intervalMusicService = myLocalBinder.getService();
             isBound = true;
+            intervalMusicService.setResultReceiver(intervalMusicReceiver);
 
             IntervalMusicService.IntervalPlaybackState currentState = intervalMusicService.getCurrentState();
             if (currentState != null) {
-                intervalMusicServiceStateChanged(currentState);
-
-                updateUIWithCurrentSong(intervalMusicService.getCurrentMetadata());
+                if (currentPlaylist != null && !currentPlaylist.uri.equals(intervalMusicService.getCurrentPlaylist().uri)) {
+                    intervalMusicService.startNewPlayback(currentPlaylist);
+                }
+                else {
+                    intervalMusicServiceStateChanged(currentState);
+                    updateUIWithCurrentSong(intervalMusicService.getCurrentMetadata());
+                    currentPlaylist = intervalMusicService.getCurrentPlaylist();
+                }
+            }
+            else {
+                intervalMusicService.startNewPlayback(currentPlaylist);
             }
         }
 
@@ -87,6 +98,8 @@ public class PlayActivity extends AppCompatActivity  {
         container = findViewById(R.id.container);
 
         playPauseButton.setOnClickListener(playPausedButtonClickedWhileStateIsPlaying);
+
+        intervalMusicReceiver = new IntervalMusicReceiver(null);
     }
 
     @Override

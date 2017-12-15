@@ -27,6 +27,8 @@ import no.hiof.larseknu.mafonzomuziki.R;
 public class IntervalMusicService extends Service implements ConnectionStateCallback, Player.NotificationCallback {
     public static final String EXTRA_RESULT_RECEIVER = "no.hiof.larseknu.mafonzomuziki.extra.RESULT_RECEIVER";
 
+
+
     public enum IntervalPlaybackState {
         PLAYBACK_INTERVAL_PAUSED,
         PLAYBACK_INTERVAL_PLAYING,
@@ -78,6 +80,14 @@ public class IntervalMusicService extends Service implements ConnectionStateCall
         return player.getMetadata();
     }
 
+    public PlaylistSimple getCurrentPlaylist() {
+        return currentPlaylist;
+    }
+
+    public void setResultReceiver(ResultReceiver resultReceiver) {
+        this.resultReceiver = resultReceiver;
+    }
+
     @Override
     public void onCreate() {
         super.onCreate();
@@ -98,15 +108,12 @@ public class IntervalMusicService extends Service implements ConnectionStateCall
         if (!initialized)
             initialize(intent);
 
-        resultReceiver = intent.getParcelableExtra(EXTRA_RESULT_RECEIVER);
         return myLocalBinder;
     }
 
     @Override
     public void onRebind(Intent intent) {
         super.onRebind(intent);
-
-        resultReceiver = intent.getParcelableExtra(EXTRA_RESULT_RECEIVER);
     }
 
     @Override
@@ -114,17 +121,30 @@ public class IntervalMusicService extends Service implements ConnectionStateCall
         return super.onUnbind(intent);
     }
 
-    private void initialize(Intent intent) {
+    public void startNewPlayback(PlaylistSimple currentPlaylist) {
         SharedPreferences sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this);
         userDefinedPlayTime = sharedPreferences.getInt("pref_interval_play", DEFAULT_PLAY_TIME) * 1000;
         userDefinedPauseTime = sharedPreferences.getInt("pref_interval_pause", DEFAULT_PAUSE_TIME) * 1000;
 
-        initializePlayerOnSuccessfulAuthentication(intent.getStringExtra("accessToken"));
-        currentPlaylist = intent.getParcelableExtra("playlist");
+        this.currentPlaylist = currentPlaylist;
         player.playUri(null, currentPlaylist.uri, 0, 0);
-        currentState = IntervalPlaybackState.PLAYBACK_INTERVAL_PLAYING;
-        startPlayCountdown(userDefinedPlayTime);
 
+        currentState = IntervalPlaybackState.PLAYBACK_INTERVAL_PLAYING;
+
+        if (countDownTimer != null)
+            countDownTimer.cancel();
+
+        startPlayCountdown(userDefinedPlayTime);
+    }
+
+    public void startNewPlaylist(PlaylistSimple currentPlaylist) {
+
+    }
+
+    private void initialize(Intent intent) {
+        initializePlayerOnSuccessfulAuthentication(intent.getStringExtra("accessToken"));
+        //startNewPlayback((PlaylistSimple)intent.getParcelableExtra("playlist"));
+        resultReceiver = intent.getParcelableExtra(EXTRA_RESULT_RECEIVER);
         initialized = true;
     }
 
