@@ -1,4 +1,4 @@
-package no.hiof.larseknu.mafonzomuziki;
+package no.hiof.larseknu.mafonzomuziki.service;
 
 import android.app.Service;
 import android.content.Intent;
@@ -11,32 +11,50 @@ import android.os.ResultReceiver;
 import android.preference.PreferenceManager;
 import android.support.v4.content.ContextCompat;
 import android.util.Log;
-import android.widget.Toast;
 
 import com.spotify.sdk.android.player.Config;
 import com.spotify.sdk.android.player.ConnectionStateCallback;
 import com.spotify.sdk.android.player.Error;
+import com.spotify.sdk.android.player.Metadata;
 import com.spotify.sdk.android.player.Player;
 import com.spotify.sdk.android.player.PlayerEvent;
 import com.spotify.sdk.android.player.Spotify;
 import com.spotify.sdk.android.player.SpotifyPlayer;
 
+import kaaes.spotify.webapi.android.models.PlaylistSimple;
+import no.hiof.larseknu.mafonzomuziki.R;
+
 public class IntervalMusicService extends Service implements ConnectionStateCallback, Player.NotificationCallback {
     public static final String EXTRA_RESULT_RECEIVER = "no.hiof.larseknu.mafonzomuziki.extra.RESULT_RECEIVER";
 
+    public enum IntervalPlaybackState {
+        PLAYBACK_INTERVAL_PAUSED,
+        PLAYBACK_INTERVAL_PLAYING,
+        PAUSED_INTERVAL_PAUSED,
+        PAUSED_INTERVAL_PLAYING
+    }
+
+    private IntervalPlaybackState currentState;
+
     public static final int RESULT_CODE_ARTIST = 1;
-    public static final int RESULT_CODE_PLAYBACK_PAUSED = 2;
-    public static final int RESULT_CODE_PLAYBACK_PLAY = 3;
-    public static final int RESULT_CODE_TIMESTAMP_UPDATED = 4;
+    public static final int RESULT_CODE_TIMESTAMP_UPDATED = 2;
+    public static final int RESULT_CODE_STATE_CHANGED = 3;
     public static final String RESULT_DATA_KEY_ARTIST = "no.hiof.larseknu.mafonzomuziki.intentservice.RESULT_DATA_ARTIST";
     public static final String RESULT_DATA_KEY_TIMESTAMP = "no.hiof.larseknu.mafonzomuziki.intentservice.RESULT_DATA_TIMESTAMP";
+
+    private static int DEFAULT_PAUSE_TIME = 10;
+    private static int DEFAULT_PLAY_TIME = 50;
+    private long userDefinedPlayTime;
+    private long userDefinedPauseTime;
 
     private String TAG = "IntervalMusicService";
 
     private SpotifyPlayer player;
+    private PlaylistSimple currentPlaylist;
 
     private MyLocalBinder myLocalBinder = new MyLocalBinder();
     private ResultReceiver resultReceiver;
+    private boolean initialized = false;
 
     private CountDownTimer countDownTimer;
     private long remainingTime = 0;
@@ -45,10 +63,19 @@ public class IntervalMusicService extends Service implements ConnectionStateCall
     private static final String CLIENT_ID = "0f835bef4ef44912ac05055c3d099b1b";
 
     private static final String REDIRECT_URI = "mafonzomuziki://callback";
+
     // endregion
 
     public IntervalMusicService() {
 
+    }
+
+    public IntervalPlaybackState getCurrentState() {
+        return currentState;
+    }
+
+    public Metadata getCurrentMetadata() {
+        return player.getMetadata();
     }
 
     @Override
@@ -58,10 +85,6 @@ public class IntervalMusicService extends Service implements ConnectionStateCall
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        initializePlayerOnSuccessfulAuthentication(intent.getStringExtra("accessToken"));
-
-        resultReceiver = intent.getParcelableExtra(EXTRA_RESULT_RECEIVER);
-
         return super.onStartCommand(intent, flags, startId);
     }
 
@@ -72,9 +95,38 @@ public class IntervalMusicService extends Service implements ConnectionStateCall
 
     @Override
     public IBinder onBind(Intent intent) {
+        if (!initialized)
+            initialize(intent);
+
+        resultReceiver = intent.getParcelableExtra(EXTRA_RESULT_RECEIVER);
         return myLocalBinder;
     }
 
+    @Override
+    public void onRebind(Intent intent) {
+        super.onRebind(intent);
+
+        resultReceiver = intent.getParcelableExtra(EXTRA_RESULT_RECEIVER);
+    }
+
+    @Override
+    public boolean onUnbind(Intent intent) {
+        return super.onUnbind(intent);
+    }
+
+    private void initialize(Intent intent) {
+        SharedPreferences sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this);
+        userDefinedPlayTime = sharedPreferences.getInt("pref_interval_play", DEFAULT_PLAY_TIME) * 1000;
+        userDefinedPauseTime = sharedPreferences.getInt("pref_interval_pause", DEFAULT_PAUSE_TIME) * 1000;
+
+        initializePlayerOnSuccessfulAuthentication(intent.getStringExtra("accessToken"));
+        currentPlaylist = intent.getParcelableExtra("playlist");
+        player.playUri(null, currentPlaylist.uri, 0, 0);
+        currentState = IntervalPlaybackState.PLAYBACK_INTERVAL_PLAYING;
+        startPlayCountdown(userDefinedPlayTime);
+
+        initialized = true;
+    }
 
     public class MyLocalBinder extends Binder {
         public IntervalMusicService getService() {
@@ -82,10 +134,57 @@ public class IntervalMusicService extends Service implements ConnectionStateCall
         }
     }
 
-    public void playMusic(String uri) {
-        player.playUri(null, uri, 0, 0);
-        SharedPreferences sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this);
-        startPlayCountdown(sharedPreferences.getInt("pref_interval_play", 20) * 1000);
+    public void play() {
+
+        switch (currentState) {
+            case PLAYBACK_INTERVAL_PAUSED:
+                player.resume(defaultOperationCallback);
+                startPlayCountdown(remainingTime);
+                currentState = IntervalPlaybackState.PLAYBACK_INTERVAL_PLAYING;
+                resultReceiver.send(RESULT_CODE_STATE_CHANGED, null);
+                break;
+            case PAUSED_INTERVAL_PAUSED:
+                startPauseCountDown(remainingTime);
+                currentState = IntervalPlaybackState.PAUSED_INTERVAL_PLAYING;
+                resultReceiver.send(RESULT_CODE_STATE_CHANGED, null);
+                break;
+        }
+    }
+
+    public void pause() {
+        switch (currentState) {
+            case PLAYBACK_INTERVAL_PLAYING:
+                player.pause(defaultOperationCallback);
+                currentState = IntervalPlaybackState.PLAYBACK_INTERVAL_PAUSED;
+                resultReceiver.send(RESULT_CODE_STATE_CHANGED, null);
+                break;
+            case PAUSED_INTERVAL_PLAYING:
+                currentState = IntervalPlaybackState.PAUSED_INTERVAL_PAUSED;
+                resultReceiver.send(RESULT_CODE_STATE_CHANGED, null);
+                break;
+        }
+
+        countDownTimer.cancel();
+
+    }
+
+    public void skipNext() {
+        if (player.getMetadata().nextTrack != null)
+            player.skipToNext(defaultOperationCallback);
+        else
+            player.playUri(defaultOperationCallback, currentPlaylist.uri, 0, 0);
+        if (!currentState.equals(IntervalPlaybackState.PLAYBACK_INTERVAL_PLAYING))
+            player.pause(defaultOperationCallback);
+    }
+
+    public void skipPrevious() {
+        if (player.getMetadata().prevTrack != null) {
+            player.skipToPrevious(defaultOperationCallback);
+        }
+        else
+            player.seekToPosition(defaultOperationCallback, 0);
+        if (!currentState.equals(IntervalPlaybackState.PLAYBACK_INTERVAL_PLAYING))
+            player.pause(defaultOperationCallback);
     }
 
     private void initializePlayerOnSuccessfulAuthentication(String accessToken) {
@@ -107,58 +206,48 @@ public class IntervalMusicService extends Service implements ConnectionStateCall
 
 
     private void startPlayCountdown(long playTime) {
-
-
         countDownTimer = new CountDownTimer(playTime, 100) {
 
             public void onTick(long millisUntilFinished) {
-                //Log.d("PlayActivity", "Play seconds remaining " + millisUntilFinished / 1000);
-                remainingTime = millisUntilFinished;
-                Bundle bundle = new Bundle();
-                bundle.putLong(RESULT_DATA_KEY_TIMESTAMP, remainingTime);
-
-                resultReceiver.send(RESULT_CODE_TIMESTAMP_UPDATED, bundle);
-                //timeTextView.setText(timerFormat.format(remainingTime / 1000.0));
+                sendTimeStamp(millisUntilFinished);
             }
 
             public void onFinish() {
-                //Log.d("PlayActivity", "Play done, pausing music for: " + userDefinedPauseTime / 1000);
+                Log.d(TAG, "Play done, pausing music for: " + userDefinedPauseTime / 1000);
                 player.pause(defaultOperationCallback);
-
-                resultReceiver.send(RESULT_CODE_PLAYBACK_PAUSED, null);
-
-                /*statusTextView.setText(R.string.paused);
-                container.setBackgroundColor(ContextCompat.getColor(PlayActivity.this, R.color.backgroundPaused));
+                currentState = IntervalPlaybackState.PAUSED_INTERVAL_PLAYING;
+                resultReceiver.send(RESULT_CODE_STATE_CHANGED, null);
                 startPauseCountDown(userDefinedPauseTime);
-                playPauseButton.setOnClickListener(playPausedButtonClickedWhileIntervalStateIsPaused);
-                skipNextButton.setEnabled(false);
-                skipPreviousButton.setEnabled(false);*/
             }
         };
         countDownTimer.start();
     }
 
-    /*private void startPauseCountDown(long pauseTime) {
-        countDownTimer = new CountDownTimer(pauseTime, 10) {
+    private void startPauseCountDown(long pauseTime) {
+        countDownTimer = new CountDownTimer(pauseTime, 100) {
 
             public void onTick(long millisUntilFinished) {
-                remainingTime = millisUntilFinished;
-                timeTextView.setText(timerFormat.format(remainingTime / 1000.0));
+                sendTimeStamp(millisUntilFinished);
             }
 
             public void onFinish() {
                 Log.d("PlayActivity", "Pause done, playing music for "+ userDefinedPlayTime / 1000);
-                player.skipToNext(null);
-                statusTextView.setText(R.string.playing);
-                container.setBackgroundColor(ContextCompat.getColor(PlayActivity.this, R.color.backgroundPlaying));
+                player.skipToNext(defaultOperationCallback);
+                currentState = IntervalPlaybackState.PLAYBACK_INTERVAL_PLAYING;
+                resultReceiver.send(RESULT_CODE_STATE_CHANGED, null);
                 startPlayCountdown(userDefinedPlayTime);
-                playPauseButton.setOnClickListener(PlayPausedButtonClickedWhileIntervalStateIsPlaying);
-                skipNextButton.setEnabled(true);
-                skipPreviousButton.setEnabled(true);
             }
         };
         countDownTimer.start();
-    }*/
+    }
+
+    private void sendTimeStamp(long remainingTime) {
+        this.remainingTime = remainingTime;
+        Bundle bundle = new Bundle();
+        bundle.putLong(RESULT_DATA_KEY_TIMESTAMP, remainingTime);
+
+        resultReceiver.send(RESULT_CODE_TIMESTAMP_UPDATED, bundle);
+    }
 
     @Override
     public void onPlaybackEvent(PlayerEvent playerEvent) {

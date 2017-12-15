@@ -33,6 +33,7 @@ import kaaes.spotify.webapi.android.models.Album;
 import kaaes.spotify.webapi.android.models.Pager;
 import kaaes.spotify.webapi.android.models.PlaylistSimple;
 import no.hiof.larseknu.mafonzomuziki.adapter.PlaylistRecyclerAdapter;
+import no.hiof.larseknu.mafonzomuziki.service.IntervalMusicService;
 import retrofit.Callback;
 import retrofit.RetrofitError;
 import retrofit.client.Response;
@@ -139,6 +140,11 @@ public class MainActivity extends AppCompatActivity implements SpotifyPlayer.Not
                 Log.e("MainActivity", "Could not initialize player: " + throwable.getMessage());
             }
         });
+
+        if (!this.accessToken.isEmpty()) {
+            Intent intent = new Intent(this, IntervalMusicService.class);
+            startService(intent);
+        }
     }
 
     @Override
@@ -186,7 +192,7 @@ public class MainActivity extends AppCompatActivity implements SpotifyPlayer.Not
             Log.d("MainActivity", "Number of playlists: " + playlistSimplePager.total);
 
             for (PlaylistSimple playlistSimple : playlistSimplePager.items) {
-                Log.d("MainActivity", playlistSimple.name);
+                //Log.d("MainActivity", playlistSimple.name);
 
                 playlists.add(playlistSimple);
             }
