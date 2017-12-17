@@ -1,19 +1,26 @@
 package no.hiof.larseknu.mafonzomuziki.service;
 
 import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.graphics.Bitmap;
+import android.graphics.drawable.Drawable;
 import android.os.Binder;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.CountDownTimer;
 import android.os.IBinder;
 import android.os.ResultReceiver;
 import android.preference.PreferenceManager;
 import android.support.v4.app.NotificationCompat;
-import android.support.v4.content.ContextCompat;
+import android.support.v4.media.app.NotificationCompat.MediaStyle;
 import android.util.Log;
+import android.widget.RemoteViews;
 
 import com.spotify.sdk.android.player.Config;
 import com.spotify.sdk.android.player.ConnectionStateCallback;
@@ -23,8 +30,11 @@ import com.spotify.sdk.android.player.Player;
 import com.spotify.sdk.android.player.PlayerEvent;
 import com.spotify.sdk.android.player.Spotify;
 import com.spotify.sdk.android.player.SpotifyPlayer;
+import com.squareup.picasso.Picasso;
+import com.squareup.picasso.Target;
 
 import kaaes.spotify.webapi.android.models.PlaylistSimple;
+import kaaes.spotify.webapi.android.models.Track;
 import no.hiof.larseknu.mafonzomuziki.PlayActivity;
 import no.hiof.larseknu.mafonzomuziki.R;
 
@@ -127,7 +137,14 @@ public class IntervalMusicService extends Service implements ConnectionStateCall
         return super.onUnbind(intent);
     }
 
-    private void showNotification() {
+    private void initializeNotification() {
+        if(Build.VERSION.SDK_INT>=26) {
+            NotificationChannel channel = new NotificationChannel("MafunzoMuzikiMusic", "MafunzoMuzikiMusic", NotificationManager.IMPORTANCE_DEFAULT);
+            channel.setDescription("Main Music Channel");
+            NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            notificationManager.createNotificationChannel(channel);
+        }
+
         Intent showPlayingActivity = new Intent(this, PlayActivity.class);
 
         PendingIntent pendingIntent = PendingIntent.getActivity(
@@ -136,16 +153,67 @@ public class IntervalMusicService extends Service implements ConnectionStateCall
                 showPlayingActivity,
                 PendingIntent.FLAG_CANCEL_CURRENT);
 
-        Notification notification = new NotificationCompat.Builder(this, "mafonzomuzikimusic")
-                .setContentTitle(getString(R.string.app_name))
-                .setContentText("Some artist")
+        Notification notification = new NotificationCompat.Builder(this, "MafunzoMuzikiMusic")
+                .setContentTitle("Track title")
+                .setContentText("Artist ")
                 .setSmallIcon(R.drawable.ic_library_music)
                 .setContentIntent(pendingIntent)
                 .setOngoing(true)
                 .build();
 
-        startForeground(1, notification);
+        NotificationManager notificationManager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+
+        notificationManager.notify(0, notification);
     }
+
+    private void updateNotification(Metadata metadata) {
+        Intent showPlayingActivity = new Intent(this, PlayActivity.class);
+
+        PendingIntent pendingIntent = PendingIntent.getActivity(
+                this,
+                0,
+                showPlayingActivity,
+                PendingIntent.FLAG_CANCEL_CURRENT);
+
+        Metadata.Track currentTrack = metadata.currentTrack;
+
+        final NotificationCompat.Builder notificationBuilder = new NotificationCompat.Builder(this, "MafunzoMuzikiMusic")
+                .setContentTitle(currentTrack.name)
+                .setContentText(currentTrack.artistName + " - " + currentTrack.albumName)
+                .setSmallIcon(R.drawable.ic_library_music)
+                .setContentIntent(pendingIntent)
+                .setOngoing(true);
+
+        if (Build.VERSION.SDK_INT>=26) {
+            notificationBuilder.setStyle(new MediaStyle());
+        }
+
+        final NotificationManager notificationManager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+
+        notificationManager.notify(0, notificationBuilder.build());
+
+        Picasso.with(this)
+                .load(currentTrack.albumCoverWebUrl)
+                .resize(250, 250)
+                .into(new Target() {
+                    @Override
+                    public void onBitmapLoaded(final Bitmap bitmap, final Picasso.LoadedFrom from) {
+                        notificationBuilder.setLargeIcon(bitmap);
+                        notificationManager.notify(0, notificationBuilder.build());
+                    }
+
+                    @Override
+                    public void onBitmapFailed(final Drawable errorDrawable) {
+                        // Do nothing
+                    }
+
+                    @Override
+                    public void onPrepareLoad(final Drawable placeHolderDrawable) {
+                        // Do nothing
+                    }
+                });
+    }
+
 
     public void startNewPlayback(PlaylistSimple currentPlaylist) {
         SharedPreferences sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this);
@@ -168,7 +236,7 @@ public class IntervalMusicService extends Service implements ConnectionStateCall
         initializePlayerOnSuccessfulAuthentication(intent.getStringExtra("accessToken"));
         //startNewPlayback((PlaylistSimple)intent.getParcelableExtra("playlist"));
         resultReceiver = intent.getParcelableExtra(EXTRA_RESULT_RECEIVER);
-        showNotification();
+        initializeNotification();
         initialized = true;
     }
 
@@ -302,6 +370,8 @@ public class IntervalMusicService extends Service implements ConnectionStateCall
                 Bundle bundle = new Bundle();
                 bundle.putParcelable(RESULT_DATA_KEY_METADATA, player.getMetadata());
                 resultReceiver.send(RESULT_CODE_METADATA_CHANGED, bundle);
+                updateNotification(player.getMetadata());
+                break;
             default:
                 break;
         }
