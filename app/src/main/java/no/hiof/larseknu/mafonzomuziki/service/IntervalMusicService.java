@@ -1,5 +1,7 @@
 package no.hiof.larseknu.mafonzomuziki.service;
 
+import android.app.Notification;
+import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -9,6 +11,7 @@ import android.os.CountDownTimer;
 import android.os.IBinder;
 import android.os.ResultReceiver;
 import android.preference.PreferenceManager;
+import android.support.v4.app.NotificationCompat;
 import android.support.v4.content.ContextCompat;
 import android.util.Log;
 
@@ -22,12 +25,11 @@ import com.spotify.sdk.android.player.Spotify;
 import com.spotify.sdk.android.player.SpotifyPlayer;
 
 import kaaes.spotify.webapi.android.models.PlaylistSimple;
+import no.hiof.larseknu.mafonzomuziki.PlayActivity;
 import no.hiof.larseknu.mafonzomuziki.R;
 
 public class IntervalMusicService extends Service implements ConnectionStateCallback, Player.NotificationCallback {
     public static final String EXTRA_RESULT_RECEIVER = "no.hiof.larseknu.mafonzomuziki.extra.RESULT_RECEIVER";
-
-
 
     public enum IntervalPlaybackState {
         PLAYBACK_INTERVAL_PAUSED,
@@ -38,10 +40,10 @@ public class IntervalMusicService extends Service implements ConnectionStateCall
 
     private IntervalPlaybackState currentState;
 
-    public static final int RESULT_CODE_ARTIST = 1;
+    public static final int RESULT_CODE_METADATA_CHANGED = 1;
     public static final int RESULT_CODE_TIMESTAMP_UPDATED = 2;
     public static final int RESULT_CODE_STATE_CHANGED = 3;
-    public static final String RESULT_DATA_KEY_ARTIST = "no.hiof.larseknu.mafonzomuziki.intentservice.RESULT_DATA_ARTIST";
+    public static final String RESULT_DATA_KEY_METADATA = "no.hiof.larseknu.mafonzomuziki.intentservice.RESULT_DATA_ARTIST";
     public static final String RESULT_DATA_KEY_TIMESTAMP = "no.hiof.larseknu.mafonzomuziki.intentservice.RESULT_DATA_TIMESTAMP";
 
     private static int DEFAULT_PAUSE_TIME = 10;
@@ -84,6 +86,10 @@ public class IntervalMusicService extends Service implements ConnectionStateCall
         return currentPlaylist;
     }
 
+    public Long getCurrentTimeStamp() {
+        return remainingTime;
+    }
+
     public void setResultReceiver(ResultReceiver resultReceiver) {
         this.resultReceiver = resultReceiver;
     }
@@ -121,6 +127,26 @@ public class IntervalMusicService extends Service implements ConnectionStateCall
         return super.onUnbind(intent);
     }
 
+    private void showNotification() {
+        Intent showPlayingActivity = new Intent(this, PlayActivity.class);
+
+        PendingIntent pendingIntent = PendingIntent.getActivity(
+                this,
+                0,
+                showPlayingActivity,
+                PendingIntent.FLAG_CANCEL_CURRENT);
+
+        Notification notification = new NotificationCompat.Builder(this, "mafonzomuzikimusic")
+                .setContentTitle(getString(R.string.app_name))
+                .setContentText("Some artist")
+                .setSmallIcon(R.drawable.ic_library_music)
+                .setContentIntent(pendingIntent)
+                .setOngoing(true)
+                .build();
+
+        startForeground(1, notification);
+    }
+
     public void startNewPlayback(PlaylistSimple currentPlaylist) {
         SharedPreferences sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this);
         userDefinedPlayTime = sharedPreferences.getInt("pref_interval_play", DEFAULT_PLAY_TIME) * 1000;
@@ -130,6 +156,7 @@ public class IntervalMusicService extends Service implements ConnectionStateCall
         player.playUri(null, currentPlaylist.uri, 0, 0);
 
         currentState = IntervalPlaybackState.PLAYBACK_INTERVAL_PLAYING;
+        resultReceiver.send(RESULT_CODE_STATE_CHANGED, null);
 
         if (countDownTimer != null)
             countDownTimer.cancel();
@@ -137,14 +164,11 @@ public class IntervalMusicService extends Service implements ConnectionStateCall
         startPlayCountdown(userDefinedPlayTime);
     }
 
-    public void startNewPlaylist(PlaylistSimple currentPlaylist) {
-
-    }
-
     private void initialize(Intent intent) {
         initializePlayerOnSuccessfulAuthentication(intent.getStringExtra("accessToken"));
         //startNewPlayback((PlaylistSimple)intent.getParcelableExtra("playlist"));
         resultReceiver = intent.getParcelableExtra(EXTRA_RESULT_RECEIVER);
+        showNotification();
         initialized = true;
     }
 
@@ -276,8 +300,8 @@ public class IntervalMusicService extends Service implements ConnectionStateCall
         switch (playerEvent) {
             case kSpPlaybackNotifyMetadataChanged:
                 Bundle bundle = new Bundle();
-                bundle.putParcelable(RESULT_DATA_KEY_ARTIST, player.getMetadata());
-                resultReceiver.send(RESULT_CODE_ARTIST, bundle);
+                bundle.putParcelable(RESULT_DATA_KEY_METADATA, player.getMetadata());
+                resultReceiver.send(RESULT_CODE_METADATA_CHANGED, bundle);
             default:
                 break;
         }

@@ -9,11 +9,13 @@ import android.os.IBinder;
 import android.os.ResultReceiver;
 import android.preference.PreferenceManager;
 import android.support.constraint.ConstraintLayout;
+import android.support.v4.app.NavUtils;
 import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.KeyEvent;
+import android.view.MenuItem;
 import android.view.View;
 import android.view.View.OnClickListener;
 import android.widget.ImageButton;
@@ -69,6 +71,9 @@ public class PlayActivity extends AppCompatActivity  {
                     intervalMusicServiceStateChanged(currentState);
                     updateUIWithCurrentSong(intervalMusicService.getCurrentMetadata());
                     currentPlaylist = intervalMusicService.getCurrentPlaylist();
+
+                    Long timeStamp = intervalMusicService.getCurrentTimeStamp();
+                    timeTextView.setText(timerFormat.format(timeStamp / 1000.0));
                 }
             }
             else {
@@ -141,7 +146,6 @@ public class PlayActivity extends AppCompatActivity  {
         return super.onKeyDown(keyCode, event);
     }
 
-
     OnClickListener playPausedButtonClickedWhileStateIsPlaying = new OnClickListener() {
         @Override
         public void onClick(View view) {
@@ -179,8 +183,8 @@ public class PlayActivity extends AppCompatActivity  {
                     Long timeStamp = resultData.getLong(IntervalMusicService.RESULT_DATA_KEY_TIMESTAMP);
                     timeTextView.setText(timerFormat.format(timeStamp / 1000.0));
                     break;
-                case IntervalMusicService.RESULT_CODE_ARTIST:
-                    Metadata metadata = resultData.getParcelable(IntervalMusicService.RESULT_DATA_KEY_ARTIST);
+                case IntervalMusicService.RESULT_CODE_METADATA_CHANGED:
+                    Metadata metadata = resultData.getParcelable(IntervalMusicService.RESULT_DATA_KEY_METADATA);
                     updateUIWithCurrentSong(metadata);
                     break;
                 case IntervalMusicService.RESULT_CODE_STATE_CHANGED:
@@ -206,6 +210,7 @@ public class PlayActivity extends AppCompatActivity  {
                 playPauseButton.setOnClickListener(playPausedButtonClickedWhileStateIsPlaying);
                 break;
             case PAUSED_INTERVAL_PAUSED:
+                statusTextView.setText(R.string.paused);
                 playPauseButton.setImageDrawable(getResources().getDrawable(R.drawable.ic_play_circle_outline));
                 playPauseButton.setOnClickListener(playPausedButtonClickedWhileStateIsPaused);
                 break;
