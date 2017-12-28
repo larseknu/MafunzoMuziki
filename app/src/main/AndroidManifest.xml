@@ -13,7 +13,7 @@
         android:theme="@style/AppTheme">
         <activity
             android:name=".MainActivity"
-            android:launchMode="singleInstance">
+            android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
@@ -32,8 +32,12 @@
             </intent-filter>
         </activity>
         <activity android:name=".PlayActivity"
-            android:parentActivityName=".MainActivity" />
-
+            android:parentActivityName=".MainActivity">
+            <!-- The meta-data element is needed for versions lower than 4.1 -->
+            <meta-data
+                android:name="android.support.PARENT_ACTIVITY"
+                android:value=".MainActivity" />
+        </activity>
         <!-- Needed for Spotify LoginActivity to work -->
         <activity
             android:name="com.spotify.sdk.android.authentication.LoginActivity"
@@ -45,7 +49,8 @@
         <service
             android:name=".service.IntervalMusicService"
             android:enabled="true"
-            android:exported="true">
+            android:exported="false"
+            android:stopWithTask="false">
 
         </service>
     </application>

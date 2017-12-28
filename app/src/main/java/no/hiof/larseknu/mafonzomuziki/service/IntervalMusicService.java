@@ -1,15 +1,16 @@
 package no.hiof.larseknu.mafonzomuziki.service;
 
-import android.app.Notification;
-import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
-import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
+import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
+import android.media.AudioAttributes;
+import android.media.AudioManager;
+import android.media.SoundPool;
 import android.os.Binder;
 import android.os.Build;
 import android.os.Bundle;
@@ -20,7 +21,6 @@ import android.preference.PreferenceManager;
 import android.support.v4.app.NotificationCompat;
 import android.support.v4.media.app.NotificationCompat.MediaStyle;
 import android.util.Log;
-import android.widget.RemoteViews;
 
 import com.spotify.sdk.android.player.Config;
 import com.spotify.sdk.android.player.ConnectionStateCallback;
@@ -34,9 +34,9 @@ import com.squareup.picasso.Picasso;
 import com.squareup.picasso.Target;
 
 import kaaes.spotify.webapi.android.models.PlaylistSimple;
-import kaaes.spotify.webapi.android.models.Track;
 import no.hiof.larseknu.mafonzomuziki.PlayActivity;
 import no.hiof.larseknu.mafonzomuziki.R;
+import no.hiof.larseknu.mafonzomuziki.util.NotificationUtil;
 
 public class IntervalMusicService extends Service implements ConnectionStateCallback, Player.NotificationCallback {
     public static final String EXTRA_RESULT_RECEIVER = "no.hiof.larseknu.mafonzomuziki.extra.RESULT_RECEIVER";
@@ -73,6 +73,12 @@ public class IntervalMusicService extends Service implements ConnectionStateCall
     private CountDownTimer countDownTimer;
     private long remainingTime = 0;
 
+    private NotificationManager notificationManager;
+    private NotificationCompat.Builder notificationBuilder;
+
+    private SoundPool soundPool;
+    private int intervalChangeSound;
+
     // region top secret
     private static final String CLIENT_ID = "0f835bef4ef44912ac05055c3d099b1b";
 
@@ -106,12 +112,42 @@ public class IntervalMusicService extends Service implements ConnectionStateCall
 
     @Override
     public void onCreate() {
+        notificationManager =  (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        setUpSoundPool();
+
         super.onCreate();
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        return super.onStartCommand(intent, flags, startId);
+        if (intent == null)
+            return START_STICKY;
+        String action = intent.getAction();
+        if (action == null)
+            return START_STICKY;
+
+        if (action.equals("SKIP_NEXT"))
+            skipNext();
+        else if (action.equals("SKIP_PREVIOUS"))
+            skipPrevious();
+        else if (action.equals("PLAY_PAUSE")) {
+            if (currentState == IntervalPlaybackState.PAUSED_INTERVAL_PAUSED || currentState == IntervalPlaybackState.PLAYBACK_INTERVAL_PAUSED)
+                pause();
+            else
+                play();
+        }
+
+        return START_STICKY;
+    }
+
+    @Override
+    public void onTaskRemoved(Intent rootIntent) {
+        super.onTaskRemoved(rootIntent);
+
+        Log.d(TAG, "Destroying IntervalMusicService");
+        notificationManager.cancel(1);
+
+        stopSelf();
     }
 
     @Override
@@ -137,13 +173,24 @@ public class IntervalMusicService extends Service implements ConnectionStateCall
         return super.onUnbind(intent);
     }
 
-    private void initializeNotification() {
-        if(Build.VERSION.SDK_INT>=26) {
-            NotificationChannel channel = new NotificationChannel("MafunzoMuzikiMusic", "MafunzoMuzikiMusic", NotificationManager.IMPORTANCE_DEFAULT);
-            channel.setDescription("Main Music Channel");
-            NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-            notificationManager.createNotificationChannel(channel);
+    private void setUpSoundPool() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+
+            AudioAttributes audioAttributes = new AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build();
+            soundPool = new SoundPool.Builder().setAudioAttributes(audioAttributes).setMaxStreams(5).build();
         }
+        else {
+            soundPool = new SoundPool(5, AudioManager.STREAM_MUSIC, 0);
+        }
+
+        intervalChangeSound = soundPool.load(getApplicationContext(), R.raw.interval_change, 1);
+    }
+
+    private void initializeNotification() {
+        NotificationUtil.createNotificationChannel(this);
 
         Intent showPlayingActivity = new Intent(this, PlayActivity.class);
 
@@ -151,67 +198,107 @@ public class IntervalMusicService extends Service implements ConnectionStateCall
                 this,
                 0,
                 showPlayingActivity,
-                PendingIntent.FLAG_CANCEL_CURRENT);
+                PendingIntent.FLAG_UPDATE_CURRENT);
 
-        Notification notification = new NotificationCompat.Builder(this, "MafunzoMuzikiMusic")
-                .setContentTitle("Track title")
-                .setContentText("Artist ")
+        Intent skipNextIntent = new Intent(this, IntervalMusicService.class);
+        skipNextIntent.setAction("SKIP_NEXT");
+        PendingIntent skipNextPendingIntent = PendingIntent.getService(this, 2, skipNextIntent, 0);
+        Intent skipPreviousIntent = new Intent(this, IntervalMusicService.class);
+        skipPreviousIntent.setAction("SKIP_PREVIOUS");
+        PendingIntent skipPreviousPendingIntent = PendingIntent.getService(this, 3, skipPreviousIntent, 0);
+        Intent playPauseIntent = new Intent(this, IntervalMusicService.class);
+        playPauseIntent.setAction("PLAY_PAUSE");
+        PendingIntent playPausePendingIntent = PendingIntent.getService(this, 4, playPauseIntent, 0);
+
+        notificationBuilder = new NotificationCompat.Builder(this, "MafunzoMuzikiMusic")
                 .setSmallIcon(R.drawable.ic_library_music)
                 .setContentIntent(pendingIntent)
                 .setOngoing(true)
-                .build();
+                .addAction(R.drawable.ic_skip_previous, "SkipPrevious", skipPreviousPendingIntent)
+                .addAction(R.drawable.ic_pause_circle_outline, "Pause", playPausePendingIntent)
+                .addAction(R.drawable.ic_skip_next, "SkipNext", skipNextPendingIntent);
 
-        NotificationManager notificationManager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        if (Build.VERSION.SDK_INT >= 26)
+            notificationBuilder.setStyle(new MediaStyle());
 
-        notificationManager.notify(0, notification);
+        updateNotification(getCurrentMetadata(), true);
     }
 
     private void updateNotification(Metadata metadata) {
-        Intent showPlayingActivity = new Intent(this, PlayActivity.class);
+        updateNotification(metadata, false);
+    }
 
-        PendingIntent pendingIntent = PendingIntent.getActivity(
-                this,
-                0,
-                showPlayingActivity,
-                PendingIntent.FLAG_CANCEL_CURRENT);
-
+    private void updateNotification(Metadata metadata, boolean firstNotification) {
         Metadata.Track currentTrack = metadata.currentTrack;
 
-        final NotificationCompat.Builder notificationBuilder = new NotificationCompat.Builder(this, "MafunzoMuzikiMusic")
-                .setContentTitle(currentTrack.name)
-                .setContentText(currentTrack.artistName + " - " + currentTrack.albumName)
-                .setSmallIcon(R.drawable.ic_library_music)
-                .setContentIntent(pendingIntent)
-                .setOngoing(true);
+        if (currentTrack != null) {
 
-        if (Build.VERSION.SDK_INT>=26) {
-            notificationBuilder.setStyle(new MediaStyle());
+            Intent showPlayingActivity = new Intent(this, PlayActivity.class);
+
+            PendingIntent pendingIntent = PendingIntent.getActivity(
+                    this,
+                    0,
+                    showPlayingActivity,
+                    PendingIntent.FLAG_UPDATE_CURRENT);
+
+            Intent skipNextIntent = new Intent(this, IntervalMusicService.class);
+            skipNextIntent.setAction("SKIP_NEXT");
+            PendingIntent skipNextPendingIntent = PendingIntent.getService(this, 2, skipNextIntent, 0);
+            Intent skipPreviousIntent = new Intent(this, IntervalMusicService.class);
+            skipPreviousIntent.setAction("SKIP_PREVIOUS");
+            PendingIntent skipPreviousPendingIntent = PendingIntent.getService(this, 3, skipPreviousIntent, 0);
+            Intent playPauseIntent = new Intent(this, IntervalMusicService.class);
+            playPauseIntent.setAction("PLAY_PAUSE");
+            PendingIntent playPausePendingIntent = PendingIntent.getService(this, 4, playPauseIntent, 0);
+
+            notificationBuilder = new NotificationCompat.Builder(this, "MafunzoMuzikiMusic")
+                    .setSmallIcon(R.drawable.ic_library_music)
+                    .setContentIntent(pendingIntent)
+                    .setOngoing(true)
+                    .addAction(R.drawable.ic_skip_previous, "SkipPrevious", skipPreviousPendingIntent)
+                    .addAction(R.drawable.ic_pause_circle_outline, "Pause", playPausePendingIntent)
+                    .addAction(R.drawable.ic_skip_next, "SkipNext", skipNextPendingIntent)
+                    .setContentTitle(currentTrack.name)
+                    .setContentText(currentTrack.artistName + " - " + currentTrack.albumName);
+
+            if (firstNotification)
+                startForeground(1, notificationBuilder.build());
+            else
+                notificationManager.notify(1, notificationBuilder.build());
+
+            Log.d(TAG, currentTrack.albumCoverWebUrl);
+
+            Picasso.with(this)
+                    .load(currentTrack.albumCoverWebUrl)
+                    .resize(250, 250)
+                    .placeholder(R.drawable.ic_library_music)
+                    .into(new Target() {
+                        @Override
+                        public void onBitmapLoaded(final Bitmap bitmap, final Picasso.LoadedFrom from) {
+                            notificationBuilder.setLargeIcon(bitmap);
+                            notificationManager.notify(1, notificationBuilder.build());
+                        }
+
+                        @Override
+                        public void onBitmapFailed(final Drawable errorDrawable) {
+                            // Do nothing
+                            Log.d(TAG, "Loading bitmap into notification failed");
+                        }
+
+                        @Override
+                        public void onPrepareLoad(final Drawable placeHolderDrawable) {
+                            // Do nothing
+                            notificationBuilder.setLargeIcon(((BitmapDrawable)placeHolderDrawable).getBitmap());
+                            notificationManager.notify(1, notificationBuilder.build());
+                        }
+                    });
         }
+    }
 
-        final NotificationManager notificationManager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+    private void updateNotificationWithRemainingTime(int maxTime, int millisecondsUntilFinished) {
+        notificationBuilder.setProgress(maxTime, millisecondsUntilFinished, false);
 
-        notificationManager.notify(0, notificationBuilder.build());
-
-        Picasso.with(this)
-                .load(currentTrack.albumCoverWebUrl)
-                .resize(250, 250)
-                .into(new Target() {
-                    @Override
-                    public void onBitmapLoaded(final Bitmap bitmap, final Picasso.LoadedFrom from) {
-                        notificationBuilder.setLargeIcon(bitmap);
-                        notificationManager.notify(0, notificationBuilder.build());
-                    }
-
-                    @Override
-                    public void onBitmapFailed(final Drawable errorDrawable) {
-                        // Do nothing
-                    }
-
-                    @Override
-                    public void onPrepareLoad(final Drawable placeHolderDrawable) {
-                        // Do nothing
-                    }
-                });
+        notificationManager.notify(1, notificationBuilder.build());
     }
 
 
@@ -234,9 +321,7 @@ public class IntervalMusicService extends Service implements ConnectionStateCall
 
     private void initialize(Intent intent) {
         initializePlayerOnSuccessfulAuthentication(intent.getStringExtra("accessToken"));
-        //startNewPlayback((PlaylistSimple)intent.getParcelableExtra("playlist"));
         resultReceiver = intent.getParcelableExtra(EXTRA_RESULT_RECEIVER);
-        initializeNotification();
         initialized = true;
     }
 
@@ -247,7 +332,6 @@ public class IntervalMusicService extends Service implements ConnectionStateCall
     }
 
     public void play() {
-
         switch (currentState) {
             case PLAYBACK_INTERVAL_PAUSED:
                 player.resume(defaultOperationCallback);
@@ -277,7 +361,6 @@ public class IntervalMusicService extends Service implements ConnectionStateCall
         }
 
         countDownTimer.cancel();
-
     }
 
     public void skipNext() {
@@ -307,6 +390,8 @@ public class IntervalMusicService extends Service implements ConnectionStateCall
                 player = spotifyPlayer;
                 player.addConnectionStateCallback(IntervalMusicService.this);
                 player.addNotificationCallback(IntervalMusicService.this);
+
+                initializeNotification();
             }
 
             @Override
@@ -319,8 +404,15 @@ public class IntervalMusicService extends Service implements ConnectionStateCall
 
     private void startPlayCountdown(long playTime) {
         countDownTimer = new CountDownTimer(playTime, 100) {
-
             public void onTick(long millisUntilFinished) {
+                if (2951 < millisUntilFinished && millisUntilFinished < 3050)
+                    soundPool.play(intervalChangeSound, 1, 1, 1,0,1);
+                else if (1951 < millisUntilFinished && millisUntilFinished < 2050)
+                    soundPool.play(intervalChangeSound, 1, 1, 1,0,1);
+                else if (951 < millisUntilFinished && millisUntilFinished < 1050)
+                    soundPool.play(intervalChangeSound, 1, 1, 1,0,1);
+
+                updateNotificationWithRemainingTime((int)userDefinedPlayTime, (int)millisUntilFinished);
                 sendTimeStamp(millisUntilFinished);
             }
 
@@ -330,6 +422,7 @@ public class IntervalMusicService extends Service implements ConnectionStateCall
                 currentState = IntervalPlaybackState.PAUSED_INTERVAL_PLAYING;
                 resultReceiver.send(RESULT_CODE_STATE_CHANGED, null);
                 startPauseCountDown(userDefinedPauseTime);
+                soundPool.play(intervalChangeSound, 1, 1, 1,0,1);
             }
         };
         countDownTimer.start();
@@ -339,6 +432,15 @@ public class IntervalMusicService extends Service implements ConnectionStateCall
         countDownTimer = new CountDownTimer(pauseTime, 100) {
 
             public void onTick(long millisUntilFinished) {
+                if (2951 < millisUntilFinished && millisUntilFinished < 3050)
+                    soundPool.play(intervalChangeSound, 1, 1, 1,0,1);
+                else if (1951 < millisUntilFinished && millisUntilFinished < 2050)
+                    soundPool.play(intervalChangeSound, 1, 1, 1,0,1);
+                else if (951 < millisUntilFinished && millisUntilFinished < 1050)
+                    soundPool.play(intervalChangeSound, 1, 1, 1,0,1);
+
+                updateNotificationWithRemainingTime((int)userDefinedPauseTime, (int)millisUntilFinished);
+
                 sendTimeStamp(millisUntilFinished);
             }
 
@@ -348,6 +450,7 @@ public class IntervalMusicService extends Service implements ConnectionStateCall
                 currentState = IntervalPlaybackState.PLAYBACK_INTERVAL_PLAYING;
                 resultReceiver.send(RESULT_CODE_STATE_CHANGED, null);
                 startPlayCountdown(userDefinedPlayTime);
+                soundPool.play(intervalChangeSound, 1, 1, 1,0,1);
             }
         };
         countDownTimer.start();

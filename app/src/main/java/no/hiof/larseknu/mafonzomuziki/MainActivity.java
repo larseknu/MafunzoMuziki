@@ -39,6 +39,7 @@ import retrofit.RetrofitError;
 import retrofit.client.Response;
 
 public class MainActivity extends AppCompatActivity implements SpotifyPlayer.NotificationCallback, ConnectionStateCallback {
+    private static final String TAG = "MainActivity";
 
     // region top secret
     // Request code will be used to verify if result comes from the login activity. Can be set to any integer.
@@ -57,6 +58,8 @@ public class MainActivity extends AppCompatActivity implements SpotifyPlayer.Not
 
     String accessToken;
 
+
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -68,9 +71,9 @@ public class MainActivity extends AppCompatActivity implements SpotifyPlayer.Not
         builder.setScopes(new String[]{"user-read-private", "streaming"});
         AuthenticationRequest request = builder.build();
 
-        //AuthenticationClient.openLoginActivity(this, REQUEST_CODE, request);
+        AuthenticationClient.openLoginActivity(this, REQUEST_CODE, request);
 
-        AuthenticationClient.openLoginInBrowser(this, request);
+        //AuthenticationClient.openLoginInBrowser(this, request);
 
         playlists = new ArrayList<>();
 
@@ -83,6 +86,9 @@ public class MainActivity extends AppCompatActivity implements SpotifyPlayer.Not
         Uri uri = intent.getData();
         if (uri != null) {
             AuthenticationResponse response = AuthenticationResponse.fromUri(uri);
+            int tokenExpiresIn = response.getExpiresIn();
+            Log.d(TAG, "Expires in: " + tokenExpiresIn);
+
             switch (response.getType()) {
                 // Response was successful and contains auth token
                 case TOKEN:
